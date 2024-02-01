@@ -28,21 +28,48 @@ namespace CASCToolHost
             if (!parseIt) return root;
 
             var newRoot = false;
+            const uint MagicAfter82 = 0x4D465354; // MFST
 
             using (var ms = new MemoryStream(BLTE.Parse(content)))
             using (var bin = new BinaryReader(ms))
             {
+                UInt32 headerSize = 0;
+                UInt32 totalFiles = 0;
+                UInt32 namedFiles = 0;
+
                 var header = bin.ReadUInt32();
-                if (header == 1296454484)
+                if (header == MagicAfter82)
                 {
-                    uint totalFiles = bin.ReadUInt32();
-                    uint namedFiles = bin.ReadUInt32();
+                    uint headerSizeOrTotalFiles = bin.ReadUInt32();
+                    uint versionOrNamedFiles = bin.ReadUInt32();
                     newRoot = true;
+
+                    headerSize = headerSizeOrTotalFiles;
+
+                    // >= 10.1.7.50893 changed the manifest header (https://wowdev.wiki/TACT) first uint32 is header_size, second is version
+                    switch (versionOrNamedFiles)
+                    {
+                        case 1:
+                            totalFiles = bin.ReadUInt32();
+                            namedFiles = bin.ReadUInt32();
+                            bin.ReadUInt32(); // likely_padding
+                            break;
+                        default:
+                            totalFiles = headerSizeOrTotalFiles;
+                            namedFiles = versionOrNamedFiles;
+                            headerSize = 12;
+                            break;
+                    }
                 }
                 else
                 {
                     bin.BaseStream.Position = 0;
                 }
+
+                if (bin.BaseStream.Length < headerSize)
+                    throw new Exception("Issue with root header size");
+
+                bin.BaseStream.Position = headerSize;
 
                 while (bin.BaseStream.Position < bin.BaseStream.Length)
                 {
